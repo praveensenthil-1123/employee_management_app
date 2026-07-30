@@ -46,7 +46,7 @@ jobs:
         with: 
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_BACKEND_USER }}
-          password: ${{ secrets.EC2_BACKEND_KEY }}
+          key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
             echo "Deployment successful. Verifying the application..."
             ls -lh /opt/employee-app/releases
