@@ -39,9 +39,28 @@ jobs:
           username: ${{ secrets.EC2_BACKEND_USER }}
           key: ${{ secrets.EC2_BACKEND_KEY }}
           source: "target/*.jar"
-          target: "/opt/employee-app/releases"
+          target: "/tmp"
 
-      - name: Verify deployment
+      - name: Moving Jar to Release Directory
+        uses: appleboy/ssh-action@v1
+        with: 
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ${{ secrets.EC2_BACKEND_USER }}
+          key: ${{ secrets.EC2_BACKEND_KEY }}
+          script: |
+            echo "Checking Jar file path in /tmp directory..."
+            JAR_FILE=$(find /tmp -name "*.jar" | head -n 1)
+            if [ -z "$JAR_FILE" ]; then
+             echo "ERROR: No JAR file found!"
+             exit 1
+            fi
+            echo "Found JAR file: $JAR_FILE"
+            sudo mkdir -p /opt/employee-app/releases
+            sudo mv "$JAR_FILE" /opt/employee-app/releases/ 
+            sudo chown appuser:appuser /opt/employee-app/releases/*.jar
+            echo "Jar file moved successfully."
+
+      - name: Verifying Deployment
         uses: appleboy/ssh-action@v1
         with: 
           host: ${{ secrets.EC2_BACKEND_HOST }}
@@ -49,5 +68,6 @@ jobs:
           key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
             echo "Deployment successful. Verifying the application..."
-            ls -lh /opt/employee-app/releases
+            echo "Listing the contents of /opt/employee-app/releases directory:"
+            sudo -u appuser ls -lh /opt/employee-app/releases
             
