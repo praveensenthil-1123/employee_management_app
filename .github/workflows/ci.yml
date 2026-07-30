@@ -37,7 +37,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_BACKEND_USER }}
-          password: ${{ secrets.EC2_BACKEND_KEY }}
+          key: ${{ secrets.EC2_BACKEND_KEY }}
           source: "target/*.jar"
           target: "/opt/employee-app/releases"
 
