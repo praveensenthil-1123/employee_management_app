@@ -70,4 +70,18 @@ jobs:
             echo "Deployment successful. Verifying the application..."
             echo "Listing the contents of /opt/employee-app/releases directory:"
             sudo -u appuser ls -lh /opt/employee-app/releases
+
+      - name: Restarting Application Service
+        uses: appleboy/ssh-action@v1
+        with: 
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ${{ secrets.EC2_BACKEND_USER }}
+          key: ${{ secrets.EC2_BACKEND_KEY }}
+          script: |
+            echo "Restarting the application service..."
+            sudo systemctl restart employee-app.service
+            sleep 10 #for the service to restart properly
+            sudo systemctl status employee-app.service --no-pager --lines=20
+            echo "Application service restarted successfully."
+
             
