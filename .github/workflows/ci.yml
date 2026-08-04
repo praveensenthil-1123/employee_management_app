@@ -55,9 +55,12 @@ jobs:
              exit 1
             fi
             echo "Found JAR file: $JAR_FILE"
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            Release_name="employee-management-${TIMESTAMP}.jar"
             sudo mkdir -p /opt/employee-app/releases
-            sudo mv "$JAR_FILE" /opt/employee-app/releases/ 
-            sudo chown appuser:appuser /opt/employee-app/releases/*.jar
+            sudo mv "$JAR_FILE" /opt/employee-app/releases/$Release_name 
+            sudo ln -sfn /opt/employee-app/releases/$Release_name /opt/employee-app/current.jar
+            sudo chown appuser:appuser /opt/employee-app/releases/$Release_name
             echo "Jar file moved successfully."
 
       - name: Verifying Deployment
@@ -69,7 +72,7 @@ jobs:
           script: |
             echo "Deployment successful. Verifying the application..."
             echo "Listing the contents of /opt/employee-app/releases directory:"
-            sudo -u appuser ls -lh /opt/employee-app/releases
+            sudo -u appuser ls -l /opt/employee-app/releases
 
       - name: Restarting Application Service
         uses: appleboy/ssh-action@v1
