@@ -78,10 +78,21 @@ jobs:
           username: ${{ secrets.EC2_BACKEND_USER }}
           key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
+            set -e
+            echo "----------------------------------------"
             echo "Restarting the application service..."
-            sudo systemctl restart employee-app.service
+            echo "----------------------------------------"
+            set +e
+            sudo systemctl restart employee-app
+            status=$?
+            if [ $status -ne 0 ]; then
+              echo "ERROR: ❌Failed to restart the application service. Please check the service logs for more details."
+              exit 1
+            fi
             sleep 10 #for the service to restart properly
-            sudo systemctl status employee-app.service --no-pager --lines=20
-            echo "Application service restarted successfully."
+            sudo systemctl status employee_app --no-pager --lines=20
+            echo "==============================================="
+            echo "✅ Application service restarted successfully."
+            echo "==============================================="
 
             
