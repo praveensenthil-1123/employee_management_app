@@ -51,10 +51,10 @@ jobs:
             echo "Checking Jar file path in /tmp directory..."
             JAR_FILE=$(find /tmp -name "*.jar" | head -n 1)
             if [ -z "$JAR_FILE" ]; then
-             echo "ERROR: No JAR file found!"
+             echo "ERROR: No JAR file found on /tmp!"
              exit 1
             fi
-            echo "Found JAR file: $JAR_FILE"
+            echo "Found JAR file: $JAR_FILE on the server. Moving to /opt/employee-app/releases directory..."
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             Release_name="employee-management-${TIMESTAMP}.jar"
             sudo mkdir -p /opt/employee-app/releases
@@ -70,7 +70,7 @@ jobs:
           username: ${{ secrets.EC2_BACKEND_USER }}
           key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
-            echo "Deployment successful. Verifying the application..."
+            echo "Deployment successful. Verifying the JAR..."
             echo "Listing the contents of /opt/employee-app/releases directory:"
             sudo -u appuser ls -l /opt/employee-app/releases
 
@@ -112,6 +112,26 @@ jobs:
             echo "==============================================="
             echo "✅ Application service restarted successfully."
             echo "==============================================="
+      - name: cleanup old releases
+        uses: appleboy/ssh-action@v1
+        with: 
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ${{ secrets.EC2_BACKEND_USER }}
+          key: ${{ secrets.EC2_BACKEND_KEY }}
+          script: |
+            echo "Checking total jar count in your release Directory and cleaning up old releases if necessary..."
+            RELEASE_DIR="/opt/employee-app/releases"
+            RELEASE_COUNT=$(ls "$RELEASE_DIR"/*.jar 2>/dev/null | wc -l)
+            echo "Total Jar Count: $RELEASE_COUNT"
+            if [ "$RELEASE_COUNT" -gt 5 ]; then
+               echo "More than 5 jars found. Cleaning up old releases..."
+               echo "Deleting the following releases:"
+               ls "$RELEASE_DIR"/*.jar | sort | head -n -5
+               ls "$RELEASE_DIR"/*.jar | sort | head -n -5 | xargs sudo rm | xargs sudo rm 
+               echo "Cleanup completed."
+               echo "Remaining releases:"
+               ls -1 "$RELEASE_DIR"/*.jar
+            else
+               echo "Cleanup not required."
+            fi
 
-
-            
