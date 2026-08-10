@@ -142,6 +142,7 @@ jobs:
               echo "==============================================="
               echo "Initiating rollback to previous release..."
               Rollback_jar=$(ls /opt/employee-app/releases/*.jar | sed -n '2p')
+              echo "Rolling back to previous release: $Rollback_jar"
               if /opt/employee-app/rollback.sh "$Rollback_jar"; then
                  echo "Rollback completed successfully."
               else
