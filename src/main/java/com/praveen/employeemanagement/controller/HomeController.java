@@ -8,6 +8,6 @@ public class HomeController {
 
     @GetMapping("/")
     public String home() {
-        return "Employee Management Application is Running";
+        return "Employee Management Application V2 is Running";
     }
 }
