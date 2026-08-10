@@ -141,7 +141,7 @@ jobs:
               sudo journalctl -u employee_app --no-pager --lines=30
               echo "==============================================="
               echo "Initiating rollback to previous release..."
-              Rollback_jar=$(ls /opt/employee-app/releases/*.jar | sed -n '2p')
+              Rollback_jar=$(cd /opt/employee-app/releases && ls *.jar | sed -n '2p')
               echo "Rolling back to previous release: $Rollback_jar"
               if /opt/employee-app/rollback.sh "$Rollback_jar"; then
                  echo "Rollback completed successfully."
@@ -345,6 +345,8 @@ jobs:
               echo "==============================================="
               echo "Initiating rollback to previous release..."
               Rollback_jar=$(ls /opt/employee-app/releases/*.jar | sed -n '2p')
+              echo "Rolling back to previous release: $Rollback_jar"
+              Rollback_jar=$(cd /opt/employee-app/releases && ls *.jar | sed -n '2p')
               echo "Rolling back to previous release: $Rollback_jar"
               if /opt/employee-app/rollback.sh "$Rollback_jar"; then
                  echo "Rollback completed successfully."
