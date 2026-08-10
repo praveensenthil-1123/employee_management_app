@@ -285,7 +285,28 @@ jobs:
           echo "Attaching server 2 back to ALB..."
           aws elbv2 register-targets \
             --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
-            --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}" 
+            --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}"
+            
+      - name: Wait for server 2 to become healthy in ALB
+        run: |
+         echo "Waiting for server 2 to become healthy in ALB..."
+         for i in {1..12}; do
+            HEALTH_STATUS=$(aws elbv2 describe-target-health \
+              --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
+              --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' \
+              --output text)
+            if [ "$HEALTH_STATUS" == "healthy" ]; then
+              echo "✅ Server 2 is healthy in ALB."
+              break
+            fi
+            echo "Attempt $i/12 - Server 2 not healthy. Current status: $HEALTH_STATUS. Waiting..."
+            sleep 10    
+          done
+          if [ "$HEALTH_STATUS" != "healthy" ]; then
+            echo "ERROR: ❌ Server 2 did not become healthy in ALB within the expected time."
+            exit 1
+          fi       
       - name: cleanup old releases on Server 2
         uses: appleboy/ssh-action@v1
         with: 
