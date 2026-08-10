@@ -20,6 +20,18 @@ jobs:
            java-version: '25'
            distribution: 'temurin'
 
+      - name: Configure AWS credentials 
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Test AWS access
+        run: |
+             aws sts get-caller-identity
+             aws elbv2 describe-target-health \
+             --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}"      
+
       - name: make maven executable
         run: chmod +x mvnw
 
