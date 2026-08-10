@@ -97,6 +97,8 @@ jobs:
             sudo -u appuser ls -l /opt/employee-app/releases
 
       - name: Restarting Application Service on Server 1
+        id: deploy_server_1
+        continue-on-error: true
         uses: appleboy/ssh-action@v1
         with: 
           host: ${{ secrets.BACKEND_1_HOST }}
@@ -118,6 +120,9 @@ jobs:
               echo "==============================================="
               exit 1
             fi
+            echo "TEST: Intentionally stopping application..."
+            sudo systemctl stop employee_app
+            status=$?
             echo "Waiting for application to become healthy..."
             for i in {1..6}; do
               if curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
@@ -130,18 +135,71 @@ jobs:
             if ! curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
               echo "ERROR: ❌ Application is not healthy. Please check the service logs for more details."
               echo "==============================================="
-              echo "Deployment failled not adding server 1 to ALB. Please check the logs for more details."
+              echo "Deployment failled"
               echo "==============================================="              
               echo "Last 30 lines of application logs:"
               sudo journalctl -u employee_app --no-pager --lines=30
+              echo "==============================================="
+              echo "Initiating rollback to previous release..."
+              Rollback_jar=$(ls /opt/employee-app/releases/*.jar | sed -n '2p')
+              if /opt/employee-app/rollback.sh "$Rollback_jar"; then
+                 echo "Rollback completed successfully."
+              else
+                 echo "ERROR: Rollback failed!"
+                 exit 1
+              fi
               exit 1
             fi
             sudo systemctl status employee_app --no-pager --lines=20
             echo "==============================================="
             echo "✅ Application service restarted successfully."
             echo "==============================================="
-      
+      - name: Attach server 1 back to ALB After Successfull Rollback
+        if: steps.deploy_server_1.outcome == 'failure'
+        run: |
+          echo "==============================================="
+          echo "Rollback was performed. Attaching server 1 back to ALB..."
+          echo "==============================================="
+          aws elbv2 register-targets \
+            --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
+            --targets Id="${{ secrets.BACKEND_1_INSTANCE_ID }}"
+
+      - name: Wait for server 1 to become healthy in ALB after Rollback
+        if: steps.deploy_server_1.outcome == 'failure'
+        run: |
+          echo "Waiting for server 1 to become healthy in ALB..."
+          for i in {1..12}; do
+            HEALTH_STATUS=$(aws elbv2 describe-target-health \
+              --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
+              --targets Id="${{ secrets.BACKEND_1_INSTANCE_ID }}" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' \
+              --output text)
+            if [ "$HEALTH_STATUS" == "healthy" ]; then
+              echo "✅ Server 1 is healthy in ALB."
+              break
+            else
+             echo "Attempt $i/12 - Server 1 not healthy. Current status: $HEALTH_STATUS. Waiting..."
+             sleep 10
+            fi
+          done
+          if [ "$HEALTH_STATUS" != "healthy" ]; then
+            echo "ERROR: ❌ Server 1 did not become healthy in ALB within the expected time. after rollback."
+            exit 1
+          fi
+
+      - name: Stop deployment after Server 1 failure
+        if: steps.deploy_server_1.outcome == 'failure'
+        run: |
+          echo "==============================================="
+          echo "❌ Server 1 deployment failed."
+          echo "✅ Rollback completed."
+          echo "✅ Server 1 is healthy in ALB after rollback."
+          echo "🛑 Stopping deployment."
+          echo "Server 2 will NOT be deployed."
+          echo "==============================================="
+          exit 1
       - name: Attach server 1 back to ALB
+        if: steps.deploy_server_1.outcome == 'success'
         run: |
           echo "Attaching server 1 back to ALB..."
           aws elbv2 register-targets \
@@ -149,6 +207,7 @@ jobs:
             --targets Id="${{ secrets.BACKEND_1_INSTANCE_ID }}" 
 
       - name: Wait for server 1 to become healthy in ALB
+        if: steps.deploy_server_1.outcome == 'success'
         run: |
           echo "Waiting for server 1 to become healthy in ALB..."
           for i in {1..12}; do
@@ -170,6 +229,7 @@ jobs:
           fi
 
       - name: cleanup old releases on Server 1
+        if: steps.deploy_server_1.outcome == 'success'
         uses: appleboy/ssh-action@v1
         with: 
           host: ${{ secrets.BACKEND_1_HOST }}
@@ -184,7 +244,7 @@ jobs:
                echo "More than 5 jars found. Cleaning up old releases..."
                echo "Deleting the following releases:"
                ls "$RELEASE_DIR"/*.jar | sort | head -n -5
-               ls "$RELEASE_DIR"/*.jar | sort | head -n -5 | xargs sudo rm | xargs sudo rm 
+               ls "$RELEASE_DIR"/*.jar | sort | head -n -5 | xargs sudo rm 
                echo "Cleanup completed."
                echo "Remaining releases:"
                ls -1 "$RELEASE_DIR"/*.jar
@@ -240,6 +300,8 @@ jobs:
             sudo -u appuser ls -l /opt/employee-app/releases
             
       - name: Restarting Application Service on Server 2
+        id: deploy_server_2
+        continue-on-error: true
         uses: appleboy/ssh-action@v1
         with: 
           host: ${{ secrets.BACKEND_2_HOST }}
@@ -274,13 +336,73 @@ jobs:
               echo "ERROR: ❌ Application is not healthy. Please check the service logs for more details."
               echo "Last 30 lines of application logs:"
               sudo journalctl -u employee_app --no-pager --lines=30
+              echo "==============================================="
+              echo "Deployment failled"
+              echo "==============================================="              
+              echo "Last 30 lines of application logs:"
+              sudo journalctl -u employee_app --no-pager --lines=30
+              echo "==============================================="
+              echo "Initiating rollback to previous release..."
+              Rollback_jar=$(ls /opt/employee-app/releases/*.jar | sed -n '2p')
+              if /opt/employee-app/rollback.sh "$Rollback_jar"; then
+                 echo "Rollback completed successfully."
+              else
+                 echo "ERROR: Rollback failed!"
+                 exit 1
+              fi
               exit 1
             fi
             sudo systemctl status employee_app --no-pager --lines=20
             echo "==============================================="
             echo "✅ Application service restarted successfully."
             echo "==============================================="
+      - name: Attach server 2 back to ALB After Successfull Rollback
+        if: always() && steps.deploy_server_2.outcome == 'failure'
+        run: |
+          echo "==============================================="
+          echo "Rollback was performed. Attaching server 2 back to ALB..."
+          echo "==============================================="
+          aws elbv2 register-targets \
+            --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
+            --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}"
+
+      - name: Wait for server 2 to become healthy in ALB after Rollback
+        if: always() && steps.deploy_server_2.outcome == 'failure'
+        run: |
+          echo "Waiting for server 2 to become healthy in ALB..."
+          for i in {1..12}; do
+            HEALTH_STATUS=$(aws elbv2 describe-target-health \
+              --target-group-arn "${{ secrets.TARGET_GROUP_ARN }}" \
+              --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' \
+              --output text)
+            if [ "$HEALTH_STATUS" == "healthy" ]; then
+              echo "✅ Server 2 is healthy in ALB."
+              break
+            else
+             echo "Attempt $i/12 - Server 2 not healthy. Current status: $HEALTH_STATUS. Waiting..."
+             sleep 10
+            fi
+          done
+          if [ "$HEALTH_STATUS" != "healthy" ]; then
+            echo "ERROR: ❌ Server 2 did not become healthy in ALB within the expected time. after rollback."
+            exit 1
+          fi
+
+      - name: Stop deployment after Server 2 failure
+        if: always() && steps.deploy_server_2.outcome == 'failure'
+        run: |
+             echo "==============================================="
+              echo "❌ Server 2 deployment failed."
+             echo "✅ Rollback was attempted."
+             echo "🛑 Stopping deployment."
+             echo "==============================================="
+             echo "Server 2 failed. Deployment pipeline will stop."
+             echo "==============================================="
+             exit 1
+
       - name: Attach server 2 back to ALB
+        if: steps.deploy_server_2.outcome == 'success'
         run: |
           echo "Attaching server 2 back to ALB..."
           aws elbv2 register-targets \
@@ -288,6 +410,7 @@ jobs:
             --targets Id="${{ secrets.BACKEND_2_INSTANCE_ID }}"
             
       - name: Wait for server 2 to become healthy in ALB
+        if: steps.deploy_server_2.outcome == 'success'
         run: |
          echo "Waiting for server 2 to become healthy in ALB..."
          for i in {1..12}; do
@@ -308,6 +431,7 @@ jobs:
             exit 1
           fi       
       - name: cleanup old releases on Server 2
+        if: steps.deploy_server_2.outcome == 'success'
         uses: appleboy/ssh-action@v1
         with: 
           host: ${{ secrets.BACKEND_2_HOST }}
@@ -322,7 +446,7 @@ jobs:
                echo "More than 5 jars found. Cleaning up old releases..."
                echo "Deleting the following releases:"
                ls "$RELEASE_DIR"/*.jar | sort | head -n -5
-               ls "$RELEASE_DIR"/*.jar | sort | head -n -5 | xargs sudo rm | xargs sudo rm 
+               ls "$RELEASE_DIR"/*.jar | sort | head -n -5 | xargs sudo rm 
                echo "Cleanup completed."
                echo "Remaining releases:"
                ls -1 "$RELEASE_DIR"/*.jar
