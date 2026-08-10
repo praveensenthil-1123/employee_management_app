@@ -120,8 +120,8 @@ jobs:
               echo "==============================================="
               exit 1
             fi
-            echo "TEST: Intentionally stopping application..."
-            sudo systemctl stop employee_app
+            #echo "TEST: Intentionally stopping application..."
+            #sudo systemctl stop employee_app
             status=$?
             echo "Waiting for application to become healthy..."
             for i in {1..6}; do
