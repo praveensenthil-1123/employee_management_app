@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main 
-
+    paths-ignore:
+      - '.github/workflows/alb-permission-test.yml'
 jobs:
   build:
 
