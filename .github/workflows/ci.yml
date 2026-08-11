@@ -25,9 +25,21 @@ jobs:
         with:
            java-version: '25'
            distribution: 'temurin'
-
+      - name: Debug GitHub OIDC claims
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const payload = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64url').toString()
+            );
+            console.log("Issuer:", payload.iss);
+            console.log("Audience:", payload.aud);
+            console.log("Subject:", payload.sub);
+            console.log("Repository:", payload.repository);
+            console.log("Ref:", payload.ref);
       - name: Configure AWS credentials 
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
              
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
