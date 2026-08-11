@@ -6,9 +6,14 @@ on:
       - main 
     paths-ignore:
       - '.github/workflows/alb-permission-test.yml'
+      
 jobs:
+  
   build:
-
+    permissions:
+      contents: read
+      id-token: write
+      
 
     runs-on: ubuntu-latest
     steps:
@@ -23,10 +28,11 @@ jobs:
 
       - name: Configure AWS credentials 
         uses: aws-actions/configure-aws-credentials@v2
+             
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+          
       - name: Test AWS access
         run: |
              aws sts get-caller-identity
@@ -100,61 +106,58 @@ jobs:
         id: deploy_server_1
         continue-on-error: true
         uses: appleboy/ssh-action@v1
-        with: 
+        with:
           host: ${{ secrets.BACKEND_1_HOST }}
           username: ${{ secrets.EC2_BACKEND_USER }}
           key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
-            set -e
-            echo "----------------------------------------"
-            echo "Restarting the application service..."
-            echo "----------------------------------------"
-            set +e
-            sudo systemctl restart employee_app
-            status=$?
-            set -e
-            if [ $status -ne 0 ]; then
-              echo "ERROR: ❌Failed to restart the application service. Please check the service logs for more details."
-              echo "==============================================="
-              echo "Restart failled not adding server 1 to ALB. Please check the logs for more details."
-              echo "==============================================="
-              exit 1
-            fi
-            #echo "TEST: Intentionally stopping application..."
-            #sudo systemctl stop employee_app
-            status=$?
-            echo "Waiting for application to become healthy..."
-            for i in {1..6}; do
-              if curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
-                echo "✅ Application is healthy."
-                break
-              fi
-              echo "Attempt $i/6 - Application not ready. Waiting..."
-              sleep 5
-            done
-            if ! curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
-              echo "ERROR: ❌ Application is not healthy. Please check the service logs for more details."
-              echo "==============================================="
-              echo "Deployment failled"
-              echo "==============================================="              
-              echo "Last 30 lines of application logs:"
-              sudo journalctl -u employee_app --no-pager --lines=30
-              echo "==============================================="
-              echo "Initiating rollback to previous release..."
-              Rollback_jar=$(cd /opt/employee-app/releases && ls *.jar | sed -n '2p')
-              echo "Rolling back to previous release: $Rollback_jar"
-              if /opt/employee-app/rollback.sh "$Rollback_jar"; then
-                 echo "Rollback completed successfully."
-              else
-                 echo "ERROR: Rollback failed!"
+             echo "----------------------------------------"
+             echo "Restarting the application service..."
+             echo "----------------------------------------"
+
+             sudo systemctl restart employee_app
+
+              echo "Waiting for application to become healthy..."
+
+             for i in {1..6}; do
+               if curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
+                  echo "✅ Application is healthy."
+                 break
+               fi
+                echo "Attempt $i/6 - Application not ready. Waiting..."
+                sleep 5
+                done
+
+               if ! curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
+                   echo "ERROR: ❌ Application is not healthy."
+                    echo "==============================================="
+                    echo "Deployment failed."
+                    echo "==============================================="
+
+                    echo "Last 30 lines of application logs:"
+                    sudo journalctl -u employee_app --no-pager --lines=30
+
+                    echo "==============================================="
+                    echo "Initiating rollback to previous release..."
+
+                    Rollback_jar=$(cd /opt/employee-app/releases && ls *.jar | sed -n '2p')
+                    echo "Rolling back to previous release: $Rollback_jar"
+
+                 if /opt/employee-app/rollback.sh "$Rollback_jar"; then
+                    echo "✅ Rollback completed successfully."
+                 else
+                     echo "ERROR: ❌ Rollback failed!"
+                     exit 1
+                 fi
+
                  exit 1
-              fi
-              exit 1
-            fi
-            sudo systemctl status employee_app --no-pager --lines=20
-            echo "==============================================="
-            echo "✅ Application service restarted successfully."
-            echo "==============================================="
+               fi
+
+               sudo systemctl status employee_app --no-pager --lines=20
+
+               echo "==============================================="
+               echo "✅ Application service restarted successfully."
+               echo "==============================================="
       - name: Attach server 1 back to ALB After Successfull Rollback
         if: steps.deploy_server_1.outcome == 'failure'
         run: |
@@ -309,20 +312,20 @@ jobs:
           username: ${{ secrets.EC2_BACKEND_USER }}
           key: ${{ secrets.EC2_BACKEND_KEY }}
           script: |
-            set -e
-             echo "----------------------------------------"
+            
+            echo "----------------------------------------"
             echo "Restarting the application service..."
             echo "----------------------------------------"
-            set +e
+           
             sudo systemctl restart employee_app
             status=$?
-            set -e
+           
             if [ $status -ne 0 ]; then
-              echo "ERROR: ❌Failed to restart the application service. Please check the service logs for more details."
-              echo "==============================================="
-              echo "Restart failled not adding server 2 to ALB. Please check the logs for more details."
-              echo "==============================================="
-              exit 1
+             echo "ERROR: ❌Failed to restart the application service. Please check the service logs for more details."
+             echo "==============================================="
+             echo "Restart failled not adding server 2 to ALB. Please check the logs for more details."
+             echo "==============================================="
+             exit 1
             fi
             echo "Waiting for application to become healthy..."
             for i in {1..6}; do
