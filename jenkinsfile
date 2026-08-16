@@ -1,0 +1,55 @@
+pipeline {
+
+    agent {
+        label 'linux-agent'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Verify Environment') {
+            steps {
+                sh '''
+                    echo "===== Build Environment ====="
+                    echo "Hostname:"
+                    hostname
+
+                    echo "User:"
+                    whoami
+
+                    echo "Java:"
+                    java -version
+
+                    echo "Git:"
+                    git --version
+
+                    echo "Workspace:"
+                    pwd
+
+                    echo "============================="
+                '''
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh '''
+                    chmod +x mvnw
+                    ./mvnw clean package -DskipTests
+                '''
+            }
+        }
+
+        stage('Archive Artifact') {
+            steps {
+                archiveArtifacts artifacts: 'target/*.jar',
+                                   fingerprint: true
+            }
+        }
+    }
+}
