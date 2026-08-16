@@ -1,11 +1,9 @@
 pipeline {
-
     agent {
         label 'linux-agent'
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 checkout scm
@@ -51,5 +49,76 @@ pipeline {
                                    fingerprint: true
             }
         }
+
+        stage('Deploy to Server 1') {
+            steps {
+                sh '''
+            echo "======================================"
+            echo "Deploying application to Server 1"
+            echo "======================================"
+
+            JAR_FILE=$(find target -maxdepth 1 -name "*.jar" ! -name "*.original" | head -n 1)
+
+            if [ -z "$JAR_FILE" ]; then
+                echo "ERROR: JAR file not found!"
+                exit 1
+            fi
+
+            echo "JAR found: $JAR_FILE"
+
+            DEPLOY_JAR="/tmp/employee-management-${BUILD_NUMBER}.jar"
+
+            echo "Copying JAR to Server 1..."
+
+            scp -i ~/.ssh/app_deploy_key \
+                "$JAR_FILE" \
+                appuser@172.31.47.125:"$DEPLOY_JAR"
+
+            echo "JAR copied successfully."
+
+            echo "Installing release on Server 1..."
+
+            ssh -i ~/.ssh/app_deploy_key appuser@172.31.47.125 \
+                "DEPLOY_JAR='$DEPLOY_JAR' bash -s" << 'REMOTE_SCRIPT'
+
+                set -e
+
+                RELEASE_DIR="/opt/employee-app/releases"
+
+                TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+                RELEASE_NAME="employee-management-${TIMESTAMP}.jar"
+
+                echo "Creating release directory..."
+                sudo mkdir -p "$RELEASE_DIR"
+
+                echo "Moving JAR to release directory..."
+                sudo mv "$DEPLOY_JAR" "$RELEASE_DIR/$RELEASE_NAME"
+
+                echo "Updating current.jar..."
+                sudo ln -sfn "$RELEASE_DIR/$RELEASE_NAME" \
+                    /opt/employee-app/current.jar
+
+                echo "Changing ownership..."
+                sudo chown appuser:appuser \
+                    "$RELEASE_DIR/$RELEASE_NAME"
+
+                echo "Deployment files prepared."
+
+                echo "Current release:"
+                ls -lh /opt/employee-app/current.jar
+
+                echo "Release:"
+                ls -lh "$RELEASE_DIR/$RELEASE_NAME"
+
+REMOTE_SCRIPT
+
+            echo "======================================"
+            echo "Server 1 deployment completed."
+            echo "======================================"
+        '''
+            }
+        }
     }
-}
+    
+    }
