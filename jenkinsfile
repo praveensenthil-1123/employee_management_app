@@ -13,7 +13,10 @@ pipeline {
         stage('Verify Environment') {
             steps {
                 sh '''
-                    echo "===== Build Environment ====="
+                    echo "======================================"
+                    echo "Build Environment"
+                    echo "======================================"
+
                     echo "Hostname:"
                     hostname
 
@@ -29,7 +32,7 @@ pipeline {
                     echo "Workspace:"
                     pwd
 
-                    echo "============================="
+                    echo "======================================"
                 '''
             }
         }
@@ -37,8 +40,17 @@ pipeline {
         stage('Build') {
             steps {
                 sh '''
+                    echo "======================================"
+                    echo "Building Application"
+                    echo "======================================"
+
                     chmod +x mvnw
+
                     ./mvnw clean package -DskipTests
+
+                    echo "Build completed successfully."
+
+                    ls -lh target/*.jar
                 '''
             }
         }
@@ -50,116 +62,276 @@ pipeline {
             }
         }
 
-        stage('Deploy to Server 1') {
+        stage('Deploy') {
             steps {
                 sh '''
-            echo "======================================"
-            echo "Deploying application to Server 1"
-            echo "======================================"
+                    echo "======================================"
+                    echo "Deploying Application"
+                    echo "======================================"
 
-            JAR_FILE=$(find target -maxdepth 1 -name "*.jar" ! -name "*.original" | head -n 1)
+                    JAR_FILE=$(find target -maxdepth 1 \
+                        -name "*.jar" \
+                        ! -name "*.original" \
+                        | head -n 1)
 
-            if [ -z "$JAR_FILE" ]; then
-                echo "ERROR: JAR file not found!"
-                exit 1
-            fi
-
-            echo "JAR found: $JAR_FILE"
-
-            DEPLOY_JAR="/tmp/employee-management-${BUILD_NUMBER}.jar"
-
-            echo "Copying JAR to Server 1..."
-
-            scp -i ~/.ssh/app_deploy_key \
-                "$JAR_FILE" \
-                appuser@172.31.47.125:"$DEPLOY_JAR"
-
-            echo "JAR copied successfully."
-
-            echo "Installing release on Server 1..."
-
-            ssh -i ~/.ssh/app_deploy_key appuser@172.31.47.125 \
-                "DEPLOY_JAR='$DEPLOY_JAR' bash -s" << 'REMOTE_SCRIPT'
-
-                set -e
-
-                RELEASE_DIR="/opt/employee-app/releases"
-
-                TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-
-                RELEASE_NAME="employee-management-${TIMESTAMP}.jar"
-
-                echo "Creating release directory..."
-                sudo mkdir -p "$RELEASE_DIR"
-
-                echo "Moving JAR to release directory..."
-                sudo mv "$DEPLOY_JAR" "$RELEASE_DIR/$RELEASE_NAME"
-
-                echo "Updating current.jar..."
-                sudo ln -sfn "$RELEASE_DIR/$RELEASE_NAME" \
-                    /opt/employee-app/current.jar
-
-                echo "Changing ownership..."
-                sudo chown appuser:appuser \
-                    "$RELEASE_DIR/$RELEASE_NAME"
-
-                echo "Deployment files prepared."
-
-                echo "Current release:"
-                ls -lh /opt/employee-app/current.jar
-
-                echo "Release:"
-                ls -lh "$RELEASE_DIR/$RELEASE_NAME"
-
-REMOTE_SCRIPT
-
-            echo "======================================"
-            echo "Server 1 deployment completed."
-            echo "======================================"
-        '''
-            }
-        }
-
-        stage('Restart Application') {
-            steps {
-                sh '''
-            echo "======================================"
-            echo "Restarting Employee Application"
-            echo "======================================"
-
-            ssh -i ~/.ssh/app_deploy_key appuser@172.31.47.125 'bash -s' <<'REMOTE_SCRIPT'
-
-                set -e
-
-                echo "Restarting employee_app service..."
-                sudo systemctl restart employee_app
-
-                echo "Waiting for application to become healthy..."
-
-                for i in 1 2 3 4 5 6
-                do
-                    echo "Health check attempt $i/6..."
-
-                    if curl -sf http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null
-                    then
-                        echo "Application is healthy."
-                        exit 0
+                    if [ -z "$JAR_FILE" ]; then
+                        echo "ERROR: JAR file not found!"
+                        exit 1
                     fi
 
-                    echo "Application not ready yet. Waiting 5 seconds..."
-                    sleep 5
-                done
+                    echo "JAR found:"
+                    echo "$JAR_FILE"
 
-                echo "ERROR: Application failed health check."
+                    DEPLOY_JAR="/tmp/employee-management-${BUILD_NUMBER}.jar"
 
-                echo "Last 30 lines of application logs:"
-                sudo journalctl -u employee_app --no-pager --lines=30
+                    echo "Copying JAR to Server 1..."
 
-                exit 1
+                    scp -i ~/.ssh/app_deploy_key \
+                        "$JAR_FILE" \
+                        appuser@172.31.47.125:"$DEPLOY_JAR"
+
+                    echo "JAR copied successfully."
+
+                    ssh -i ~/.ssh/app_deploy_key \
+                        appuser@172.31.47.125 \
+                        "DEPLOY_JAR='$DEPLOY_JAR' bash -s" <<'REMOTE_SCRIPT'
+
+                        set -e
+
+                        RELEASE_DIR="/opt/employee-app/releases"
+
+                        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+                        RELEASE_NAME="employee-management-${TIMESTAMP}.jar"
+
+                        echo "Creating release directory..."
+
+                        sudo mkdir -p "$RELEASE_DIR"
+
+                        echo "Moving JAR to release directory..."
+
+                        sudo mv "$DEPLOY_JAR" \
+                            "$RELEASE_DIR/$RELEASE_NAME"
+
+                        echo "Updating current.jar..."
+
+                        sudo ln -sfn \
+                            "$RELEASE_DIR/$RELEASE_NAME" \
+                            /opt/employee-app/current.jar
+
+                        echo "Changing ownership..."
+
+                        sudo chown appuser:appuser \
+                            "$RELEASE_DIR/$RELEASE_NAME"
+
+                        echo "Deployment files prepared."
+
+                        echo "Current release:"
+                        ls -lh /opt/employee-app/current.jar
+
+                        echo "Release:"
+                        ls -lh "$RELEASE_DIR/$RELEASE_NAME"
 
 REMOTE_SCRIPT
-        '''
+
+                    echo "======================================"
+                    echo "Deployment completed."
+                    echo "======================================"
+                '''
             }
         }
+
+        stage('Restart and Health Check') {
+            steps {
+                script {
+                    def deploymentResult = sh(
+                        script: '''
+                            echo "======================================"
+                            echo "Restarting Employee Application"
+                            echo "======================================"
+
+                            ssh -i ~/.ssh/app_deploy_key \
+                                appuser@172.31.47.125 \
+                                'bash -s' <<'REMOTE_SCRIPT'
+
+                                set -e
+
+                                echo "Restarting employee_app service..."
+
+                                sudo systemctl restart employee_app
+
+                                echo "Waiting for application to become healthy..."
+
+                                for i in 1 2 3 4 5 6
+                                do
+                                    echo "Health check attempt $i/6..."
+
+                                    if curl -sf \
+                                        http://localhost:8080/actuator/health \
+                                        | grep '"status":"UP"' > /dev/null
+                                    then
+
+                                        echo "Application is healthy."
+
+                                        exit 0
+
+                                    fi
+
+                                    echo "Application not ready yet."
+
+                                    sleep 5
+
+                                done
+
+                                echo "ERROR: Application failed health check."
+
+                                echo "Last 30 lines of application logs:"
+
+                                sudo journalctl \
+                                    -u employee_app \
+                                    --no-pager \
+                                    --lines=30
+
+                                exit 1
+
+REMOTE_SCRIPT
+                        ''',
+                        returnStatus: true
+                    )
+
+                    if (deploymentResult == 0) {
+                        echo '======================================'
+                        echo 'Deployment successful.'
+                        echo 'Application is healthy.'
+                        echo '======================================'
+                    } else {
+                        echo '======================================'
+                        echo 'DEPLOYMENT FAILED'
+                        echo '======================================'
+
+                        echo 'Starting rollback...'
+
+                        def rollbackResult = sh(
+                            script: '''
+                                ssh -i ~/.ssh/app_deploy_key \
+                                    appuser@172.31.47.125 \
+                                    'bash -s' <<'REMOTE_SCRIPT'
+
+                                    set -e
+
+                                    RELEASE_DIR="/opt/employee-app/releases"
+
+                                    echo "Available releases:"
+
+                                    ls -lt "$RELEASE_DIR"/*.jar
+
+                                    echo "Finding previous release..."
+
+                                    CURRENT_RELEASE=$(readlink -f \
+                                        /opt/employee-app/current.jar)
+
+                                    echo "Current release:"
+                                    echo "$CURRENT_RELEASE"
+
+                                    PREVIOUS_RELEASE=$(ls -t \
+                                        "$RELEASE_DIR"/*.jar \
+                                        | grep -v "$CURRENT_RELEASE" \
+                                        | head -n 1)
+
+                                    if [ -z "$PREVIOUS_RELEASE" ]; then
+
+                                        echo "ERROR: No previous release found!"
+
+                                        exit 1
+
+                                    fi
+
+                                    echo "Previous release:"
+                                    echo "$PREVIOUS_RELEASE"
+
+                                    echo "Performing rollback..."
+
+                                    sudo ln -sfn \
+                                        "$PREVIOUS_RELEASE" \
+                                        /opt/employee-app/current.jar
+
+                                    echo "Restarting application after rollback..."
+
+                                    sudo systemctl restart employee_app
+
+                                    echo "Waiting for rollback application to become healthy..."
+
+                                    for i in 1 2 3 4 5 6
+                                    do
+
+                                        echo "Rollback health check attempt $i/6..."
+
+                                        if curl -sf \
+                                            http://localhost:8080/actuator/health \
+                                            | grep '"status":"UP"' > /dev/null
+                                        then
+
+                                            echo "Rollback application is healthy."
+
+                                            exit 0
+
+                                        fi
+
+                                        echo "Rollback application not ready."
+
+                                        sleep 5
+
+                                    done
+
+                                    echo "ERROR: Rollback application failed health check."
+
+                                    echo "Last 30 lines of application logs:"
+
+                                    sudo journalctl \
+                                        -u employee_app \
+                                        --no-pager \
+                                        --lines=30
+
+                                    exit 1
+
+REMOTE_SCRIPT
+                            ''',
+                            returnStatus: true
+                        )
+
+                        if (rollbackResult == 0) {
+                            echo '======================================'
+                            echo 'ROLLBACK SUCCESSFUL'
+                            echo 'Previous release is healthy.'
+                            echo '======================================'
+
+                            error('Deployment failed. Rollback completed successfully.')
+                        } else {
+                            echo '======================================'
+                            echo 'CRITICAL FAILURE'
+                            echo 'ROLLBACK FAILED'
+                            echo '======================================'
+
+                            error('Deployment failed AND rollback failed.')
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    post {
+        success {
+            echo '======================================'
+            echo 'PIPELINE SUCCESS'
+            echo '======================================'
+            echo 'Application deployed successfully.'
         }
+
+        failure {
+            echo '======================================'
+            echo 'PIPELINE FAILED'
+            echo '======================================'
+        }
+    }
+}
