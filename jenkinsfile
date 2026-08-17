@@ -120,43 +120,46 @@ REMOTE_SCRIPT
             }
         }
 
-        stage('Restart and Health Check Server 1') {
+        stage('Restart Application') {
             steps {
                 sh '''
             echo "======================================"
             echo "Restarting Employee Application"
             echo "======================================"
 
-            ssh -i ~/.ssh/app_deploy_key appuser@172.31.47.125 "
+            ssh -i ~/.ssh/app_deploy_key appuser@172.31.47.125 'bash -s' <<'REMOTE_SCRIPT'
+
                 set -e
 
-                echo 'Restarting employee_app service...'
+                echo "Restarting employee_app service..."
                 sudo systemctl restart employee_app
 
-                echo 'Waiting for application to become healthy...'
+                echo "Waiting for application to become healthy..."
 
                 for i in 1 2 3 4 5 6
                 do
-                    echo \"Health check attempt \$i/6...\"
+                    echo "Health check attempt $i/6..."
 
-                    if curl -s http://localhost:8080/actuator/health | grep '\"status\":\"UP\"' > /dev/null
+                    if curl -sf http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null
                     then
-                        echo 'Application is healthy.'
+                        echo "Application is healthy."
                         exit 0
                     fi
 
-                    echo 'Application not ready yet. Waiting 5 seconds...'
+                    echo "Application not ready yet. Waiting 5 seconds..."
                     sleep 5
                 done
 
-                echo 'ERROR: Application failed health check.'
-                echo 'Last 30 lines of application logs:'
+                echo "ERROR: Application failed health check."
+
+                echo "Last 30 lines of application logs:"
                 sudo journalctl -u employee_app --no-pager --lines=30
 
                 exit 1
-            "
+
+REMOTE_SCRIPT
         '''
             }
         }
-    }
-}
+        }
+        }
