@@ -2,7 +2,17 @@ pipeline {
     agent {
         label 'linux-agent'
     }
+    environment {
+        AWS_REGION = 'us-east-1'
 
+        DEPLOYMENT_ROLE_ARN =
+        'arn:aws:iam::573185899901:role/jenkins_agent-deployment-role'
+
+        TARGET_GROUP_ARN =
+        'arn:aws:elasticloadbalancing:us-east-1:573185899901:targetgroup/employee-backend-tg/b12a509fda25a817'
+
+        SERVER_1_ID = 'i-XXXXXXXXXXXX'
+    }
     stages {
         stage('Checkout') {
             steps {
@@ -36,7 +46,34 @@ pipeline {
                 '''
             }
         }
+        stage('Assume AWS Deployment Role') {
+            steps {
+                sh '''
+            echo "======================================"
+            echo "Assuming Jenkins Deployment Role"
+            echo "======================================"
 
+            CREDS=$(aws sts assume-role \
+                --role-arn "$DEPLOYMENT_ROLE_ARN" \
+                --role-session-name "jenkins-build-${BUILD_NUMBER}")
+
+            export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['Credentials']['AccessKeyId'])")
+
+            export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['Credentials']['SecretAccessKey'])")
+
+            export AWS_SESSION_TOKEN=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['Credentials']['SessionToken'])")
+
+            echo "Testing assumed role..."
+
+            AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+            AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+            AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
+            aws sts get-caller-identity
+
+            echo "Deployment role assumed successfully."
+        '''
+            }
+        }
         stage('Build') {
             steps {
                 sh '''
